@@ -28,13 +28,13 @@ typedef struct {
 	uint16_t height;
 	struct { int16_t x; int16_t y; } cursor;
 	Cell* cells;
-} Grid;
+} Field;
 
 #define CELL_AT(g, x, y) (g).cells[((y) * (g).width + (x))]
 
-static Grid create_grid(uint16_t width, uint16_t height)
+Field create_field(uint16_t width, uint16_t height)
 {
-	return (Grid) {
+	return (Field) {
 			.width = width,
 			.height = height,
 			.cursor = { .x = 0, .y = 0 },
@@ -42,132 +42,146 @@ static Grid create_grid(uint16_t width, uint16_t height)
 		};
 }
 
-static bool is_cell_in_bounds(Grid* grid, int16_t x, int16_t y)
+bool is_cell_in_bounds(Field* field, int16_t x, int16_t y)
 {
-	return ((0 <= x && x < grid->width) && (0 <= y && y < grid->height));
+	return ((0 <= x && x < field->width) && (0 <= y && y < field->height));
 }
 
-static uint8_t count_neighbors(Grid* grid, int16_t x, int16_t y)
+uint8_t count_neighbors(Field* field, int16_t x, int16_t y)
 {
 	uint8_t count = 0;
 
-	if (is_cell_in_bounds(grid, x - 1, y - 1))
-		count += CELL_AT(*grid, x - 1, y - 1).is_bomb;
+	if (is_cell_in_bounds(field, x - 1, y - 1))
+		count += CELL_AT(*field, x - 1, y - 1).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x, y - 1))
-		count += CELL_AT(*grid, x, y - 1).is_bomb;
+	if (is_cell_in_bounds(field, x, y - 1))
+		count += CELL_AT(*field, x, y - 1).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x + 1, y - 1))
-		count += CELL_AT(*grid, x + 1, y - 1).is_bomb;
+	if (is_cell_in_bounds(field, x + 1, y - 1))
+		count += CELL_AT(*field, x + 1, y - 1).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x - 1, y))
-		count += CELL_AT(*grid, x - 1, y).is_bomb;
+	if (is_cell_in_bounds(field, x - 1, y))
+		count += CELL_AT(*field, x - 1, y).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x + 1, y))
-		count += CELL_AT(*grid, x + 1, y).is_bomb;
+	if (is_cell_in_bounds(field, x + 1, y))
+		count += CELL_AT(*field, x + 1, y).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x - 1, y + 1))
-		count += CELL_AT(*grid, x - 1, y + 1).is_bomb;
+	if (is_cell_in_bounds(field, x - 1, y + 1))
+		count += CELL_AT(*field, x - 1, y + 1).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x, y + 1))
-		count += CELL_AT(*grid, x, y + 1).is_bomb;
+	if (is_cell_in_bounds(field, x, y + 1))
+		count += CELL_AT(*field, x, y + 1).is_bomb;
 	
-	if (is_cell_in_bounds(grid, x + 1, y + 1))
-		count += CELL_AT(*grid, x + 1, y + 1).is_bomb;
+	if (is_cell_in_bounds(field, x + 1, y + 1))
+		count += CELL_AT(*field, x + 1, y + 1).is_bomb;
 
 	return count;
 }
 
-static void cache_all_neighbors(Grid* grid)
+void cache_all_neighbors(Field* field)
 {
-	for (int16_t y = 0; y < grid->height; y++)
-			for (int16_t x = 0; x < grid->width; x++)
-				CELL_AT(*grid, x, y).dangerous_neighbors = count_neighbors(grid, x, y);
+	for (int16_t y = 0; y < field->height; y++)
+			for (int16_t x = 0; x < field->width; x++)
+				CELL_AT(*field, x, y).dangerous_neighbors = count_neighbors(field, x, y);
 }
 
-static void randomize_grid(Grid* grid, float bomb_chance)
+void randomize_field(Field* field, float bomb_chance)
 {
-	for (uint16_t y = 0; y < grid->height; y++) {
-		for (uint16_t x = 0; x < grid->width; x++) {
-			CELL_AT(*grid, x, y).is_shown = false;
-			CELL_AT(*grid, x, y).is_bomb = rand_bool(bomb_chance);
-		}
+	for (uint16_t i = 0; i < field->height * field->width; i++) {
+		field->cells[i].is_shown = false;
+		field->cells[i].is_bomb = rand_bool(bomb_chance);
 	}
 	
-	cache_all_neighbors(grid);
+	cache_all_neighbors(field);
 }
 
-static void destroy_grid(Grid* grid)
+void destroy_field(Field* field)
 {
-	free(grid->cells);
+	free(field->cells);
 }
 
-static void display_grid(Grid* grid)
+void display_field(Field* field)
 {
-	for (int16_t i = 0; i < grid->width; i++) printf(" = ");
+	for (int16_t i = 0; i < field->width; i++) printf(" = ");
 	puts("");
-	for (int16_t y = 0; y < grid->height; y++) {
-		for (int16_t x = 0; x < grid->width; x++) {
-			if (x == grid->cursor.x && y == grid->cursor.y)
+	for (int16_t y = 0; y < field->height; y++) {
+		for (int16_t x = 0; x < field->width; x++) {
+			if (x == field->cursor.x && y == field->cursor.y)
 				printf("[");
 			else
 				printf(" ");
-			if (CELL_AT(*grid, x, y).is_shown)
-				if (CELL_AT(*grid, x, y).is_bomb)
+			if (CELL_AT(*field, x, y).is_shown)
+				if (CELL_AT(*field, x, y).is_bomb)
 					printf("*");
 				else
-					printf("%hhu", CELL_AT(*grid, x, y).dangerous_neighbors);
+					printf("%hhu", CELL_AT(*field, x, y).dangerous_neighbors);
 			else
 				printf("#");
-			if (x == grid->cursor.x && y == grid->cursor.y)
+			if (x == field->cursor.x && y == field->cursor.y)
 				printf("]");
 			else
 				printf(" ");
 		}
 		puts("");
 	}
-	for (int16_t i = 0; i < grid->width; i++) printf(" = ");
+	for (int16_t i = 0; i < field->width; i++) printf(" = ");
 	puts("");
 }
 
-static void redisplay_grid(Grid* grid)
+void redisplay_field(Field* field)
 {
-	printf("%c[%hdA", 27, grid->height + 2);
-	printf("%c[%hdD", 27, grid->width);
+	printf("%c[%hdA", 27, field->height + 2);
+	printf("%c[%hdD", 27, field->width);
 	
-	display_grid(grid);
+	display_field(field);
 }
 
-static void open_cell_at_cursor(Grid* grid)
+Cell open_cell_at_cursor(Field* field)
 {
-	CELL_AT(*grid, grid->cursor.x, grid->cursor.y).is_shown = true;
+	CELL_AT(*field, field->cursor.x, field->cursor.y).is_shown = true;
+	return CELL_AT(*field, field->cursor.x, field->cursor.y);
+}
+
+void open_all_cells(Field* field)
+{
+	for (uint16_t i = 0; i < field->height * field->width; i++) {
+		field->cells[i].is_shown = true;
+	}
 }
 
 #define DEFAULT_GRID_WIDTH 10
 #define DEFAULT_GRID_HEIGHT 10
 
-static Grid grid = {0};
+static Field field = {0};
 static struct termios savedtattr, tattr = {0};
 static char cmd = '\0';
 static bool running = true;
 
-void sigint_handler(int dummy)
+static void game_over()
+{
+	open_all_cells(&field);
+	redisplay_field(&field);
+	printf("Boom! You lose!\n");
+	running = false;
+}
+
+static void sigint_handler(int dummy)
 {
 	(void)dummy;
     running = false;
     tcsetattr(STDIN_FILENO, TCSANOW, &savedtattr);
-    destroy_grid(&grid);
+    destroy_field(&field);
     exit(0);
 }
 
-void sigcont_handler(int dummy)
+static void sigcont_handler(int dummy)
 {
 	(void)dummy;
     tcsetattr(STDIN_FILENO, TCSANOW, &tattr);
-    display_grid(&grid);
+    display_field(&field);
 }
 
-void sigstop_handler(int dummy)
+static void sigstop_handler(int dummy)
 {
 	(void)dummy;
 	tcsetattr(STDIN_FILENO, TCSANOW, &savedtattr);
@@ -177,10 +191,10 @@ int main(void)
 {
 	srand(69);
 
-	grid = create_grid(DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT);
+	field = create_field(DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT);
 	
 	if (isatty(STDIN_FILENO) == 0) {
-		puts("ERROR: this is not a terminal!");
+		puts("This is not a terminal, the program must be run from a terminal");
 		return 1;
 	}
 	
@@ -191,8 +205,8 @@ int main(void)
 	tattr.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &tattr);
 	
-	randomize_grid(&grid, 0.28f);
-	display_grid(&grid);
+	randomize_field(&field, 0.28f);
+	display_field(&field);
 
 	signal(SIGINT, sigint_handler);
 	signal(SIGCONT, sigcont_handler);
@@ -208,35 +222,35 @@ int main(void)
 				running = false;
 				break;
 			case 'w':
-				if (grid.cursor.y > 0) grid.cursor.y--;
-				else grid.cursor.y = grid.height - 1;
-				redisplay_grid(&grid);
+				if (field.cursor.y > 0) field.cursor.y--;
+				else field.cursor.y = field.height - 1;
 				break;
 			case 'a':
-				if (grid.cursor.x > 0) grid.cursor.x--;
-				else grid.cursor.x = grid.width - 1;
-				redisplay_grid(&grid);
+				if (field.cursor.x > 0) field.cursor.x--;
+				else field.cursor.x = field.width - 1;
 				break;
 			case 's':
-				if (grid.cursor.y < grid.height - 1) grid.cursor.y++;
-				else grid.cursor.y = 0;
-				redisplay_grid(&grid);
+				if (field.cursor.y < field.height - 1) field.cursor.y++;
+				else field.cursor.y = 0;
 				break;
 			case 'd':
-				if (grid.cursor.x < grid.width - 1) grid.cursor.x++;
-				else grid.cursor.x = 0;
-				redisplay_grid(&grid);
+				if (field.cursor.x < field.width - 1) field.cursor.x++;
+				else field.cursor.x = 0;
 				break;
 			case ' ':
-				open_cell_at_cursor(&grid);
-				redisplay_grid(&grid);
+				if (open_cell_at_cursor(&field).is_bomb) {
+					game_over();
+					goto no_redisplay;
+				}
 				break;
 			default:
 				break;
 		}
+		redisplay_field(&field);
+no_redisplay:
 	}
 	
-	destroy_grid(&grid);
+	destroy_field(&field);
 	tcsetattr(STDIN_FILENO, TCSANOW, &savedtattr);
 	return 0;
 }
