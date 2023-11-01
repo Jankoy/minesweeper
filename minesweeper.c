@@ -7,16 +7,6 @@
 #include <unistd.h>
 #include <signal.h>
 
-float rand_normalized()
-{
-	return (float)rand() / RAND_MAX;
-}
-
-bool rand_bool(float percent_chance)
-{
-	return rand_normalized() < percent_chance;
-}
-
 typedef struct {
 	bool is_shown;
 	bool is_bomb;
@@ -27,11 +17,46 @@ typedef struct {
 typedef struct {
 	uint16_t width;
 	uint16_t height;
-	struct { int16_t x; int16_t y; } cursor;
+	struct { uint16_t x; uint16_t y; } cursor;
 	Cell* cells;
 } Field;
 
-#define CELL_AT(g, x, y) (g).cells[((y) * (g).width + (x))]
+#define CELL_AT(g, x, y) (g).cells[(y) * (g).width + (x)]
+
+#define DEFAULT_GRID_WIDTH  18
+#define DEFAULT_GRID_HEIGHT 20
+#define DEFAULT_BOMB_CHANCE 50
+
+static Field field = {0};
+static struct termios savedtattr, tattr = {0};
+static char cmd = '\0';
+static bool running = true;
+static bool first_click = true;
+static uint16_t empty_cell_count = -1;
+static uint16_t revealed_cell_count = 0;
+
+
+float rand_normalized()
+{
+	return (float)rand() / RAND_MAX;
+}
+
+bool rand_bool(float percent_chance)
+{
+	return rand_normalized() < percent_chance;
+}
+
+uint16_t rand_max(uint16_t max_value)
+{
+	return rand() % max_value;
+}
+
+bool rand_cell(Field* field, uint16_t* x, uint16_t* y)
+{
+	*x = rand_max(field->width);
+	*y = rand_max(field->height);
+	return CELL_AT(*field, *x, *y).is_bomb;
+}
 
 Field create_field(uint16_t width, uint16_t height)
 {
@@ -81,19 +106,28 @@ uint8_t count_neighbors(Field* field, int16_t x, int16_t y)
 
 void cache_all_neighbors(Field* field)
 {
-	for (int16_t y = 0; y < field->height; y++)
-			for (int16_t x = 0; x < field->width; x++)
+	for (uint16_t y = 0; y < field->height; y++)
+			for (uint16_t x = 0; x < field->width; x++)
 				CELL_AT(*field, x, y).dangerous_neighbors = count_neighbors(field, x, y);
 }
 
-void randomize_field(Field* field, float bomb_chance)
+uint16_t randomize_field(Field* field, uint16_t bomb_chance)
 {
-	for (uint16_t i = 0; i < field->height * field->width; i++) {
+	for (uint16_t i = 0; i < field->height * field->width; i++)
 		field->cells[i].is_shown = false;
-		field->cells[i].is_bomb = rand_bool(bomb_chance);
+	
+	if (bomb_chance > 100) bomb_chance = 100;
+	uint16_t bomb_count = (field->height * field->width * bomb_chance + 99) / 100;
+
+	uint16_t x, y;
+	for (uint16_t i = 0; i < bomb_count; i++) {
+		while (rand_cell(field, &x, &y)) {}
+		CELL_AT(*field, x, y).is_bomb = true;
 	}
 	
 	cache_all_neighbors(field);
+
+	return field->height * field->width - bomb_count;
 }
 
 void destroy_field(Field* field)
@@ -121,7 +155,7 @@ void display_field(Field* field)
 					else
 						printf(" ");
 			else if (CELL_AT(*field, x, y).is_flagged)
-				printf("!");
+				printf("?");
 			else
 				printf("_");
 			
@@ -147,9 +181,27 @@ void redisplay_field(Field* field)
 	printf("%c[%hdD", 27, 10);
 }
 
+void open_cell_recursive(Field* field, int16_t x, int16_t y)
+{
+	if (CELL_AT(*field, x, y).is_bomb || CELL_AT(*field, x, y).is_shown || !is_cell_in_bounds(field, x, y)) return;
+	else { CELL_AT(*field, x, y).is_shown = true; revealed_cell_count++; }
+	
+	open_cell_recursive(field, x - 1, y - 1);
+	open_cell_recursive(field, x, y - 1);
+	open_cell_recursive(field, x + 1, y - 1);
+	open_cell_recursive(field, x - 1, y);
+	open_cell_recursive(field, x + 1, y);
+	open_cell_recursive(field, x - 1, y + 1);
+	open_cell_recursive(field, x, y + 1);
+	open_cell_recursive(field, x + 1, y + 1);
+}
+
 Cell open_cell_at_cursor(Field* field)
 {
-	CELL_AT(*field, field->cursor.x, field->cursor.y).is_shown = true;
+	if (!CELL_AT(*field, field->cursor.x, field->cursor.y).is_bomb)
+		open_cell_recursive(field, field->cursor.x, field->cursor.y);
+	else
+		CELL_AT(*field, field->cursor.x, field->cursor.y).is_shown = true;
 	return CELL_AT(*field, field->cursor.x, field->cursor.y);
 }
 
@@ -160,16 +212,6 @@ void show_all_bombs(Field* field)
 			field->cells[i].is_shown = true;
 	}
 }
-
-#define DEFAULT_GRID_WIDTH  12
-#define DEFAULT_GRID_HEIGHT 16
-#define DEFAULT_MINE_CHANCE 0.34f
-
-static Field field = {0};
-static struct termios savedtattr, tattr = {0};
-static char cmd = '\0';
-static bool running = true;
-static bool first_click = true;
 
 static void game_over()
 {
@@ -188,9 +230,17 @@ static void quit()
 
 static void restart()
 {
-	randomize_field(&field, DEFAULT_MINE_CHANCE);
+	empty_cell_count = randomize_field(&field, DEFAULT_BOMB_CHANCE);
 	redisplay_field(&field);
 	printf("Restarted");
+}
+
+static void victory()
+{
+	show_all_bombs(&field);
+	redisplay_field(&field);
+	printf("You win");
+	running = false;
 }
 
 static void sigint_handler(int dummy)
@@ -219,7 +269,7 @@ static void sigstop_handler(int dummy)
 
 int main(void)
 {
-	srand(69);
+	srand(time(0));
 
 	field = create_field(DEFAULT_GRID_WIDTH, DEFAULT_GRID_HEIGHT);
 	
@@ -235,7 +285,7 @@ int main(void)
 	tattr.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &tattr);
 	
-	randomize_field(&field, DEFAULT_MINE_CHANCE);
+	empty_cell_count = randomize_field(&field, DEFAULT_BOMB_CHANCE);
 	display_field(&field);
 
 	signal(SIGINT, sigint_handler);
@@ -279,12 +329,20 @@ int main(void)
 				if (open_cell_at_cursor(&field).is_bomb) {
 					if (first_click) {
 						CELL_AT(field, field.cursor.x, field.cursor.y).is_bomb = false;
+						uint16_t x, y = 0;
+						while (!rand_cell(&field, &x, &y)) {}
+						CELL_AT(field, x, y).is_bomb = true;
+						cache_all_neighbors(&field);
 					} else {
 						game_over();
 						goto no_redisplay;
 					}
 				}
 				if (first_click) first_click = false;
+				if (revealed_cell_count == empty_cell_count) {
+					victory();
+					goto no_redisplay;
+				}
 				break;
 			default:
 				break;
