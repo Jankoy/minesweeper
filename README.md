@@ -2,7 +2,7 @@
 
 ## Quick Start
 
-Heavily Copied from [Tsoding](https://github.com/tsoding/mine)
+Termios code and some functions copied from [Tsoding](https://github.com/tsoding/mine)
 
 ```console
 $ make
