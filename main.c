@@ -1,18 +1,18 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
 #include <termios.h>
 #include <unistd.h>
 #include <signal.h>
-#include "mydefs.h"
 
 float rand_normalized()
 {
 	return (float)rand() / RAND_MAX;
 }
 
-bool rand_bool(f32 percent_chance)
+bool rand_bool(float percent_chance)
 {
 	return rand_normalized() < percent_chance;
 }
@@ -20,34 +20,36 @@ bool rand_bool(f32 percent_chance)
 typedef struct {
 	bool is_shown;
 	bool is_bomb;
-	u8 dangerous_neighbors;
+	uint8_t dangerous_neighbors;
 } Cell;
 
 typedef struct {
-	u16 width;
-	u16 height;
+	uint16_t width;
+	uint16_t height;
+	struct { int16_t x; int16_t y; } cursor;
 	Cell* cells;
 } Grid;
 
 #define CELL_AT(g, x, y) (g).cells[((y) * (g).width + (x))]
 
-Grid create_grid(u16 width, u16 height)
+static Grid create_grid(uint16_t width, uint16_t height)
 {
 	return (Grid) {
 			.width = width,
 			.height = height,
+			.cursor = { .x = 0, .y = 0 },
 			.cells = (Cell*)calloc(width * height, sizeof(Cell))
 		};
 }
 
-bool is_cell_in_bounds(Grid* grid, i16 x, i16 y)
+static bool is_cell_in_bounds(Grid* grid, int16_t x, int16_t y)
 {
 	return ((0 <= x && x < grid->width) && (0 <= y && y < grid->height));
 }
 
-u8 count_neighbors(Grid* grid, i16 x, i16 y)
+static uint8_t count_neighbors(Grid* grid, int16_t x, int16_t y)
 {
-	u8 count = 0;
+	uint8_t count = 0;
 
 	if (is_cell_in_bounds(grid, x - 1, y - 1))
 		count += CELL_AT(*grid, x - 1, y - 1).is_bomb;
@@ -76,17 +78,17 @@ u8 count_neighbors(Grid* grid, i16 x, i16 y)
 	return count;
 }
 
-void cache_all_neighbors(Grid* grid)
+static void cache_all_neighbors(Grid* grid)
 {
-	for (i16 y = 0; y < grid->height; y++)
-			for (i16 x = 0; x < grid->width; x++)
+	for (int16_t y = 0; y < grid->height; y++)
+			for (int16_t x = 0; x < grid->width; x++)
 				CELL_AT(*grid, x, y).dangerous_neighbors = count_neighbors(grid, x, y);
 }
 
-void randomize_grid(Grid* grid, f32 bomb_chance)
+static void randomize_grid(Grid* grid, float bomb_chance)
 {
-	for (u16 y = 0; y < grid->height; y++) {
-		for (u16 x = 0; x < grid->width; x++) {
+	for (uint16_t y = 0; y < grid->height; y++) {
+		for (uint16_t x = 0; x < grid->width; x++) {
 			CELL_AT(*grid, x, y).is_shown = false;
 			CELL_AT(*grid, x, y).is_bomb = rand_bool(bomb_chance);
 		}
@@ -95,28 +97,18 @@ void randomize_grid(Grid* grid, f32 bomb_chance)
 	cache_all_neighbors(grid);
 }
 
-void destroy_grid(Grid* grid)
+static void destroy_grid(Grid* grid)
 {
 	free(grid->cells);
 }
 
-static struct { i16 x; i16 y; } cursor = {0};
-
-#define DEFAULT_GRID_WIDTH 10
-#define DEFAULT_GRID_HEIGHT 10
-
-static Grid grid = {0};
-static struct termios savedtattr, tattr = {0};
-static char cmd = '\0';
-static bool running = true;
-
-void display_grid(Grid* grid)
+static void display_grid(Grid* grid)
 {
-	for (i16 i = 0; i < grid->width; i++) printf(" = ");
+	for (int16_t i = 0; i < grid->width; i++) printf(" = ");
 	puts("");
-	for (i16 y = 0; y < grid->height; y++) {
-		for (i16 x = 0; x < grid->width; x++) {
-			if (x == cursor.x && y == cursor.y)
+	for (int16_t y = 0; y < grid->height; y++) {
+		for (int16_t x = 0; x < grid->width; x++) {
+			if (x == grid->cursor.x && y == grid->cursor.y)
 				printf("[");
 			else
 				printf(" ");
@@ -127,18 +119,18 @@ void display_grid(Grid* grid)
 					printf("%hhu", CELL_AT(*grid, x, y).dangerous_neighbors);
 			else
 				printf("#");
-			if (x == cursor.x && y == cursor.y)
+			if (x == grid->cursor.x && y == grid->cursor.y)
 				printf("]");
 			else
 				printf(" ");
 		}
 		puts("");
 	}
-	for (i16 i = 0; i < grid->width; i++) printf(" = ");
+	for (int16_t i = 0; i < grid->width; i++) printf(" = ");
 	puts("");
 }
 
-void redisplay_grid(Grid* grid)
+static void redisplay_grid(Grid* grid)
 {
 	printf("%c[%hdA", 27, grid->height + 2);
 	printf("%c[%hdD", 27, grid->width);
@@ -146,12 +138,20 @@ void redisplay_grid(Grid* grid)
 	display_grid(grid);
 }
 
-void open_cell(Grid* grid, i16 x, i16 y)
+static void open_cell_at_cursor(Grid* grid)
 {
-	CELL_AT(*grid, x, y).is_shown = true;
+	CELL_AT(*grid, grid->cursor.x, grid->cursor.y).is_shown = true;
 }
 
-static void sigint_handler(int dummy)
+#define DEFAULT_GRID_WIDTH 10
+#define DEFAULT_GRID_HEIGHT 10
+
+static Grid grid = {0};
+static struct termios savedtattr, tattr = {0};
+static char cmd = '\0';
+static bool running = true;
+
+void sigint_handler(int dummy)
 {
 	(void)dummy;
     running = false;
@@ -160,14 +160,14 @@ static void sigint_handler(int dummy)
     exit(0);
 }
 
-static void sigcont_handler(int dummy)
+void sigcont_handler(int dummy)
 {
 	(void)dummy;
     tcsetattr(STDIN_FILENO, TCSANOW, &tattr);
     display_grid(&grid);
 }
 
-static void sigstop_handler(int dummy)
+void sigstop_handler(int dummy)
 {
 	(void)dummy;
 	tcsetattr(STDIN_FILENO, TCSANOW, &savedtattr);
@@ -208,23 +208,27 @@ int main(void)
 				running = false;
 				break;
 			case 'w':
-				if (cursor.y > 0) cursor.y--;
+				if (grid.cursor.y > 0) grid.cursor.y--;
+				else grid.cursor.y = grid.height - 1;
 				redisplay_grid(&grid);
 				break;
 			case 'a':
-				if (cursor.x > 0) cursor.x--;
+				if (grid.cursor.x > 0) grid.cursor.x--;
+				else grid.cursor.x = grid.width - 1;
 				redisplay_grid(&grid);
 				break;
 			case 's':
-				if (cursor.y < grid.height - 1) cursor.y++;
+				if (grid.cursor.y < grid.height - 1) grid.cursor.y++;
+				else grid.cursor.y = 0;
 				redisplay_grid(&grid);
 				break;
 			case 'd':
-				if (cursor.x < grid.width - 1) cursor.x++;
+				if (grid.cursor.x < grid.width - 1) grid.cursor.x++;
+				else grid.cursor.x = 0;
 				redisplay_grid(&grid);
 				break;
 			case ' ':
-				open_cell(&grid, cursor.x, cursor.y);
+				open_cell_at_cursor(&grid);
 				redisplay_grid(&grid);
 				break;
 			default:
