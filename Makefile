@@ -1,6 +1,6 @@
 CC=gcc
 
-CFLAGS=-s -O2 -Wall
+CFLAGS=-s -O2 -Wall -Werror
 
 .PHONY: install
 
