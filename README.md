@@ -1,8 +1,11 @@
 # Linux Terminal Minesweeper Clone (Heavily Copied from [Tsoding](https://github.com/tsoding/mine))
 
-## Quick Start
-
+## To Build
 ```console
 $ make
-$ ./minesweeper
+```
+
+## To Install
+```console
+$ make install
 ```
