@@ -11,7 +11,7 @@ $ ./minesweeper
 
 ## Controls
 
-| key                                                 | description        |
+| Key                                                 | Description        |
 |-----------------------------------------------------|--------------------|
 | <kbd>w</kbd>,<kbd>a</kbd>,<kbd>s</kbd>,<kbd>d</kbd> | Move cursor around |
 | <kbd>SPACE</kbd>                                    | Open cell          |
