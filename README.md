@@ -15,8 +15,6 @@ $ ./minesweeper
 |-----------------------------------------------------|--------------------|
 | <kbd>w</kbd>,<kbd>a</kbd>,<kbd>s</kbd>,<kbd>d</kbd> | Move cursor around |
 | <kbd>SPACE</kbd>                                    | Open cell          |
-| <kbd>f</kbd>                                        | Flag/unflag cell*  |
+| <kbd>f</kbd>                                        | Flag/unflag cell   |
 | <kbd>r</kbd>                                        | Restart            |
 | <kbd>q</kbd>                                        | Quit               |
-
-*Not implemented yet
