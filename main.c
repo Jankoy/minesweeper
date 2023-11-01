@@ -149,9 +149,6 @@ void open_all_cells(Field* field)
 	}
 }
 
-#define DEFAULT_GRID_WIDTH 10
-#define DEFAULT_GRID_HEIGHT 10
-
 static Field field = {0};
 static struct termios savedtattr, tattr = {0};
 static char cmd = '\0';
@@ -187,6 +184,10 @@ static void sigstop_handler(int dummy)
 	tcsetattr(STDIN_FILENO, TCSANOW, &savedtattr);
 }
 
+#define DEFAULT_GRID_WIDTH  10
+#define DEFAULT_GRID_HEIGHT 10
+#define DEFAULT_MINE_CHANCE 0.28f
+
 int main(void)
 {
 	srand(69);
@@ -205,7 +206,7 @@ int main(void)
 	tattr.c_cc[VTIME] = 0;
 	tcsetattr(STDIN_FILENO, TCSAFLUSH, &tattr);
 	
-	randomize_field(&field, 0.28f);
+	randomize_field(&field, DEFAULT_MINE_CHANCE);
 	display_field(&field);
 
 	signal(SIGINT, sigint_handler);
@@ -220,6 +221,9 @@ int main(void)
 		{
 			case 'q':
 				running = false;
+				break;
+			case 'r':
+				randomize_field(&field, DEFAULT_MINE_CHANCE);
 				break;
 			case 'w':
 				if (field.cursor.y > 0) field.cursor.y--;
